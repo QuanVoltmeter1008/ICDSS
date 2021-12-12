@@ -1,8 +1,9 @@
 ---
 title: "ICDSS"
-author: "BEST DATA"
+author: "BEST DATA : Wei Quan, Sophie Lai, Shaun Tan"
 date: "`r format(Sys.time(),'%d %B, %Y')`"
-output: html_document
+output: pdf_document
+always_allow_html : true
 ---
 
 ```{r setup, include=FALSE}
@@ -127,7 +128,6 @@ results_in$Q <- 1:91
 pval_bonf = 0.05/nrow(results)
 
 library(ggthemes)
-library(plotly)
 
 p <- results %>%
   ggplot(aes(x = coef,y = -log10(pval),col=Q,label=rownames(results))) +
@@ -143,9 +143,6 @@ p <- results %>%
 
 p + geom_text(check_overlap = TRUE,aes(size= 1/se^2))
 
-ggplotly(p)
-
-
 p2 <- results_in %>%
   ggplot(aes(x = coef_in,y = -log10(pval_in),col=Q,label=rownames(results_in))) +
   geom_point(size=1.5) +
@@ -160,32 +157,35 @@ p2 <- results_in %>%
 
 p2 + geom_text(check_overlap = TRUE,aes(size= 1/se_in^2))
 
-ggplotly(p2)
-
 ```
 
 4. Choose significant questions (ideally about 5 questions)
 
 for extrovert: Q80A+Q81A+Q83A+Q84A+Q91A
+
 for introvert: Q80A+Q82A+Q84A+Q89A+Q90A+Q91A
 
 5. Logistic regression: extrovert/introvert ~ Q1+Q2+Q3+age+sex 
 
 ```{r}
 # logistic regression for predicting
-model_ex <- glm(data=train, IE_extrovert ~ Q80A+Q81A+Q83A+Q84A+Q91A,family='binomial')
+model_ex <- glm(data=train, IE_extrovert ~ Q80A+Q81A+Q83A+Q84A+Q91A+age+gender,family='binomial')
 summary(model_ex)
+
+model_in <- glm(data=train, IE_introvert ~ Q80A+Q82A+Q84A+Q89A+Q90A+Q91A+age+gender,family='binomial')
+summary(model_in)
 
 model_in <- glm(data=train, IE_introvert ~ Q80A+Q82A+Q84A+Q89A+Q90A+Q91A,family='binomial')
 summary(model_in)
-
 ```
 
 Model for probability of extrovert:
-log(p/1-p) = -0.47658 + 0.33885* Q80A -0.36180\*Q81A -0.51117\*Q83A -0.30194\*Q84A + 0.40154*Q91A
+log(p/1-p) = -0.2457966 + 0.3360427* Q80A -0.3625338\*Q81A -0.5168198\*Q83A -0.2976905\*Q84A + 0.4043185\*Q91A -0.0001158\*age -0.1359513*gender
 
 Model for probability of introvert:
-log(p/1-p) = 1.16378 -0.29400* Q80A + 0.44347\*Q82A +0.17068\*Q84A -0.15918\*Q89A -0.22090\*Q90A -0.0.29581*Q91A
+log(p/1-p) = 1.16378 -0.29400* Q80A + 0.44347\*Q82A +0.17068\*Q84A -0.15918\*Q89A -0.22090 \*Q90A --0.29581\*Q91A
+
+*age and gender is not important in determination of introvert!*
 
 6. Cross validation
 
@@ -195,9 +195,11 @@ test$predict_in <- ifelse(predict(model_in,newdata = test,type='response')>0.5,1
 
 #predict probability
 accuracy_extrovert <- mean(test$IE_extrovert == test$predict_ex)
-paste('The accuracy of our extrovert predicting model is ', round(accuracy_extrovert*100,digits=3),'%',sep='')
+paste('The accuracy of our extrovert predicting model is ',
+      round(accuracy_extrovert*100,digits=3),'%',sep='')
 accuracy_introvert <- mean(test$IE_introvert == test$predict_in)
-paste('The accuracy of our introvert predicting model is ', round(accuracy_introvert*100,digits=3),'%',sep='')
+paste('The accuracy of our introvert predicting model is ',
+      round(accuracy_introvert*100,digits=3),'%',sep='')
 
 ## parallel connection
 test$predict_ex_par <- ifelse(predict(model_ex,newdata = test,type='response')>0.5 | 
@@ -206,9 +208,11 @@ test$predict_in_par <- ifelse(predict(model_ex,newdata = test,type='response')<0
                             predict(model_in,newdata = test,type='response')>0.5,1,0)
 
 accuracy_extrovert_par <- mean(test$IE_extrovert == test$predict_ex_par)
-paste('The accuracy of our parallel connection extrovert predicting model is ', round(accuracy_extrovert_par*100,digits=3),'%',sep='')
+paste('The accuracy of our parallel connection extrovert predicting model is ',
+      round(accuracy_extrovert_par*100,digits=3),'%',sep='')
 accuracy_introvert_par <- mean(test$IE_introvert == test$predict_in_par)
-paste('The accuracy of our parallel connection introvert predicting model is ', round(accuracy_introvert_par*100,digits=3),'%',sep='')
+paste('The accuracy of our parallel connection introvert predicting model is ',
+      round(accuracy_introvert_par*100,digits=3),'%',sep='')
 
 ## series connection
 
@@ -218,11 +222,21 @@ test$predict_in_ser <- ifelse(predict(model_ex,newdata = test,type='response')<0
                             predict(model_in,newdata = test,type='response')>0.5,1,0)
 
 accuracy_extrovert_ser <- mean(test$IE_extrovert == test$predict_ex_ser)
-paste('The accuracy of our series connection extrovert predicting model is ', round(accuracy_extrovert_ser*100,digits=3),'%',sep='')
+paste('The accuracy of our series connection extrovert predicting model is ',
+      round(accuracy_extrovert_ser*100,digits=3),'%',sep='')
 accuracy_introvert_ser <- mean(test$IE_introvert == test$predict_in_ser)
-paste('The accuracy of our series connection introvert predicting model is ', round(accuracy_introvert_ser*100,digits=3),'%',sep='')
+paste('The accuracy of our series connection introvert predicting model is ',
+      round(accuracy_introvert_ser*100,digits=3),'%',sep='')
 
 ```
 ## Conlusion :
-Generally, we prefer series models combining the two models. The predicted model has 90.5% accuracy for extrovert and 80.6% for introvert.
 
+Generally, we prefer series models combining the two models. The predicted model has 90.4% accuracy for extrovert and 80.6% for introvert.
+
+Model for probability of extrovert:
+log(p/1-p) = -0.2457966 + 0.3360427* Q80A -0.3625338\*Q81A -0.5168198\*Q83A -0.2976905\*Q84A + 0.4043185\*Q91A -0.0001158\*age -0.1359513*gender
+
+Model for probability of introvert:
+log(p/1-p) = 1.16378 -0.29400* Q80A + 0.44347\*Q82A +0.17068\*Q84A -0.15918\*Q89A -0.22090 \*Q90A --0.29581\*Q91A
+
+Age and gender is not important in determination of introvert.
