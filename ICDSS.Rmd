@@ -1,7 +1,7 @@
 ---
 title: "ICDSS"
-author: "Wei Quan"
-date: "11/26/2021"
+author: "BEST DATA"
+date: "`r format(Sys.time(),'%d %B, %Y')`"
 output: html_document
 ---
 
@@ -13,13 +13,16 @@ library(tidyverse)
 data <- read.csv('data.csv')
 ```
 
-##Data processing
+## Data processing
+
+1. filter out IE = 0 (missing value)
+
+2. filter out testelapse value in the top or bottom 1% (remove outliers in people spend too little or too much time on the test)
+
 ```{r}
-head(data)
-prop.table(table(data$IE))
-hist(data$IE)
-hist(data$testelapse,breaks=100)
-summary(data$testelapse)/60
+ggplot(data=data,aes(IE)) + geom_histogram() +theme_classic() + ggtitle('IE value distribution')
+
+ggplot(data=data,aes(testelapse)) + geom_boxplot() +theme_classic() + ggtitle('Test Elapse and Outliers')
 
 # filter with testlapse in 1% and 99% quantile
 data_filter <- data %>%
@@ -27,34 +30,99 @@ data_filter <- data %>%
 
 data_final <- data_filter %>%
   select(ends_with("A"),IE,age,gender)
+```
 
-# decide dependent value
+## Specify variables of interest
+
+1.independent variables:  answers for  91 questions (categorical,1,2,3,4,5)
+
+2.dependent variables: introvert/extrovert (categorical, 1= yes, 0 = no/not sure)
+```{r}
 data_final <- data_final%>%
   mutate(IE_extrovert=ifelse(IE==2,1,0),
          IE_introvert=ifelse(IE==1,1,0))
 
 head(data_final[,1:90])
-
 ```
 
-## extrovet analysis
+# Data visualisation
+
+1.Boxplot for values of each question
+
+2.Heatmap for correlation matrix
+```{r data visualization}
+# boxplot for each question
+data_final %>% gather(Question_number,Question_answer,starts_with('Q')[1:20]) %>%
+  ggplot(aes(Question_answer,col=Question_number)) + geom_boxplot() + 
+  facet_wrap(.~Question_number) + theme_classic()
+
+data_final %>% gather(Question_number,Question_answer,starts_with('Q')[21:40]) %>%
+  ggplot(aes(Question_answer,col=Question_number)) + geom_boxplot() + 
+  facet_wrap(.~Question_number) + theme_classic()
+
+data_final %>% gather(Question_number,Question_answer,starts_with('Q')[41:60]) %>%
+  ggplot(aes(Question_answer,col=Question_number)) + geom_boxplot() + 
+  facet_wrap(.~Question_number) + theme_classic()
+
+data_final %>% gather(Question_number,Question_answer,starts_with('Q')[61:80]) %>%
+  ggplot(aes(Question_answer,col=Question_number)) + geom_boxplot() + 
+  facet_wrap(.~Question_number) + theme_classic()
+
+data_final %>% gather(Question_number,Question_answer,starts_with('Q')[81:91]) %>%
+  ggplot(aes(Question_answer,col=Question_number)) + geom_boxplot() + 
+  facet_wrap(.~Question_number) + theme_classic()
+
+# heatmap
+cormat <- data_final %>%
+  select(starts_with('Q')) %>% 
+  cor()
+
+heatmap(cormat)
+```
+
+## Analysis plan
+
+1. Split data to testing data and training data (30%:70%)
+
 ```{r}
-# logistic regression
+train <- data_final[1:5000,]
+test <- data_final[5000:nrow(data_final),]
+```
+
+2. Select dominant questions using idea of GWAS(multiple logistic regression) for extrovert and introvert with threshold p=0.05/91 to adjust for multi comparison
+
+```{r}
+# multiple logistic regression for extrovert question selection
 logistic_ex_reg <- function(x){
-  summary(glm(data=data_final,IE_extrovert~x,family='binomial'))$coefficient[2,]
+  summary(glm(data=train,IE_extrovert~x,family='binomial'))$coefficient[2,]
 }
 
-coef <- apply(data_final[,1:91],2,logistic_ex_reg)[1,]
-se <- apply(data_final[,1:91],2,logistic_ex_reg)[2,]
-pval <- apply(data_final[,1:91],2,logistic_ex_reg)[4,]
+coef <- apply(train[,1:91],2,logistic_ex_reg)[1,]
+se <- apply(train[,1:91],2,logistic_ex_reg)[2,]
+pval <- apply(train[,1:91],2,logistic_ex_reg)[4,]
 results <- data.frame(cbind(coef,se,pval))
 results$Q <- 1:91
 
-p_threshold <- 0.05/91
+# multiple logistic regression for introvert question selection
+logistic_in_reg <- function(x){
+  summary(glm(data=train,IE_introvert~x,family='binomial'))$coefficient[2,]
+}
 
+coef_in <- apply(train[,1:91],2,logistic_in_reg)[1,]
+se_in <- apply(train[,1:91],2,logistic_in_reg)[2,]
+pval_in <- apply(train[,1:91],2,logistic_in_reg)[4,]
+results_in <- data.frame(cbind(coef_in,se_in,pval_in))
+results_in$Q <- 1:91
+
+```
+
+3. Volcano plot with x axis=coef and y axis = -log10(pval)
+
+```{r}
 # Volcano plot ------------------------------------------------
 #x:log(coef)
 #y:-log(SE)
+#test size:(1/se^2)
 
 pval_bonf = 0.05/nrow(results)
 
@@ -70,79 +138,91 @@ p <- results %>%
   annotate('text',x=-1.0, y= -log10(pval_bonf + 0.000001),
              label=paste('p=' ,pval_bonf),
              size=2,col='grey30') +
-  theme_few()
-  #scale_colour_mannual(name='',
-  #                     values=c('grey60','darkorange1','firebrick2'),
-  #                     labels=levels(results$significance),
-  #                     drop=FALSE) +
+  theme_few()+
+  ggtitle('Questions for extrovert determination')
+
 p + geom_text(check_overlap = TRUE,aes(size= 1/se^2))
+
 ggplotly(p)
 
-# -log(p) plot ------------------------------------------------
 
-results %>%
-ggplot(aes(x=Q,y=-log10(pval),col=Q))+
-  geom_point(alpha=0.8,size=1.3)+
-  scale_x_continuous() +
-  scale_y_continuous(expand = c(0, 0) ) +
-  theme_bw() +
-  theme( 
-    legend.position="none",
-    panel.border = element_blank(),
-    panel.grid.major.x = element_blank(),
-    panel.grid.minor.x = element_blank()
-    )+
-  labs(title='-logpval with Extrovert and Questions',
-       x='questions',
-       y='-logpval')+
-  geom_hline(yintercept=p_threshold,color='royalblue')
-
-# logistic regression for predicting
-predict_ex <- glm(data=data_final, IE_extrovert ~ Q80A+Q81A+Q84A+Q91A,family='binomial')
-summary(predict_ex)
-```
-
-## introvert analysis
-```{r}
-# logistic regression
-logistic_in_reg <- function(x){
-  summary(glm(data=data_final,IE_introvert~x,family='binomial'))$coefficient[2,]
-}
-
-coef_in <- apply(data_final[,1:91],2,logistic_in_reg)[1,]
-se_in <- apply(data_final[,1:91],2,logistic_in_reg)[2,]
-pval_in <- apply(data_final[,1:91],2,logistic_in_reg)[4,]
-results_in <- data.frame(cbind(coef_in,se_in,pval_in))
-results_in$Q <- 1:91
-
-p_threshold <- 0.05/91
-
-# Volcano plot ------------------------------------------------
-#x:log(coef)
-#y:-log(SE)
-
-pval_bonf = 0.05/nrow(results_in)
-
-library(ggthemes)
-p_in <- results_in %>%
+p2 <- results_in %>%
   ggplot(aes(x = coef_in,y = -log10(pval_in),col=Q,label=rownames(results_in))) +
   geom_point(size=1.5) +
   geom_hline(yintercept = -log10(pval_bonf),
              col = 'grey40',
              linetype = 'dotted') + 
-  annotate('text',x=-1.0, y= -log10(pval_bonf + 0.000001),
+  annotate('text',x=-0.5, y= -log10(pval_bonf + 0.000001),
              label=paste('p=' ,pval_bonf),
              size=2,col='grey30') +
-  theme_few()
-  #scale_colour_mannual(name='',
-  #                     values=c('grey60','darkorange1','firebrick2'),
-  #                     labels=levels(results$significance),
-  #                     drop=FALSE) +
-p_in + geom_text(check_overlap = TRUE,aes(size= 1/se^2))
+  theme_few()+
+  ggtitle('Questions for introvert determination')
 
-ggplotly(p_in)
+p2 + geom_text(check_overlap = TRUE,aes(size= 1/se_in^2))
 
-# logistic regression for predicting
-predict_in <- glm(data=data_final, IE_introvert ~ Q82A+Q83A+Q91A,family='binomial')
-summary(predict_in)
+ggplotly(p2)
+
 ```
+
+4. Choose significant questions (ideally about 5 questions)
+
+for extrovert: Q80A+Q81A+Q83A+Q84A+Q91A
+for introvert: Q80A+Q82A+Q84A+Q89A+Q90A+Q91A
+
+5. Logistic regression: extrovert/introvert ~ Q1+Q2+Q3+age+sex 
+
+```{r}
+# logistic regression for predicting
+model_ex <- glm(data=train, IE_extrovert ~ Q80A+Q81A+Q83A+Q84A+Q91A,family='binomial')
+summary(model_ex)
+
+model_in <- glm(data=train, IE_introvert ~ Q80A+Q82A+Q84A+Q89A+Q90A+Q91A,family='binomial')
+summary(model_in)
+
+```
+
+Model for probability of extrovert:
+log(p/1-p) = -0.47658 + 0.33885* Q80A -0.36180\*Q81A -0.51117\*Q83A -0.30194\*Q84A + 0.40154*Q91A
+
+Model for probability of introvert:
+log(p/1-p) = 1.16378 -0.29400* Q80A + 0.44347\*Q82A +0.17068\*Q84A -0.15918\*Q89A -0.22090\*Q90A -0.0.29581*Q91A
+
+6. Cross validation
+
+```{r cross validation}
+test$predict_ex <- ifelse(predict(model_ex,newdata = test,type='response')>0.5,1,0)
+test$predict_in <- ifelse(predict(model_in,newdata = test,type='response')>0.5,1,0)
+
+#predict probability
+accuracy_extrovert <- mean(test$IE_extrovert == test$predict_ex)
+paste('The accuracy of our extrovert predicting model is ', round(accuracy_extrovert*100,digits=3),'%',sep='')
+accuracy_introvert <- mean(test$IE_introvert == test$predict_in)
+paste('The accuracy of our introvert predicting model is ', round(accuracy_introvert*100,digits=3),'%',sep='')
+
+## parallel connection
+test$predict_ex_par <- ifelse(predict(model_ex,newdata = test,type='response')>0.5 | 
+                            predict(model_in,newdata = test,type='response')<0.5,1,0)
+test$predict_in_par <- ifelse(predict(model_ex,newdata = test,type='response')<0.5 | 
+                            predict(model_in,newdata = test,type='response')>0.5,1,0)
+
+accuracy_extrovert_par <- mean(test$IE_extrovert == test$predict_ex_par)
+paste('The accuracy of our parallel connection extrovert predicting model is ', round(accuracy_extrovert_par*100,digits=3),'%',sep='')
+accuracy_introvert_par <- mean(test$IE_introvert == test$predict_in_par)
+paste('The accuracy of our parallel connection introvert predicting model is ', round(accuracy_introvert_par*100,digits=3),'%',sep='')
+
+## series connection
+
+test$predict_ex_ser <- ifelse(predict(model_ex,newdata = test,type='response')>0.5 & 
+                            predict(model_in,newdata = test,type='response')<0.5,1,0)
+test$predict_in_ser <- ifelse(predict(model_ex,newdata = test,type='response')<0.5 & 
+                            predict(model_in,newdata = test,type='response')>0.5,1,0)
+
+accuracy_extrovert_ser <- mean(test$IE_extrovert == test$predict_ex_ser)
+paste('The accuracy of our series connection extrovert predicting model is ', round(accuracy_extrovert_ser*100,digits=3),'%',sep='')
+accuracy_introvert_ser <- mean(test$IE_introvert == test$predict_in_ser)
+paste('The accuracy of our series connection introvert predicting model is ', round(accuracy_introvert_ser*100,digits=3),'%',sep='')
+
+```
+## Conlusion :
+Generally, we prefer series models combining the two models. The predicted model has 90.5% accuracy for extrovert and 80.6% for introvert.
+
